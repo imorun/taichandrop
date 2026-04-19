@@ -48,10 +48,10 @@
 </div>
 
 <script>
-    // 指定された新しいハッシュ値に更新
-    const HASHED_PASS = "d4b23ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
+    // 指定されたハッシュ値
+    const HASHED_PASS = "d4b239ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
 
-    async function a(t) {
+    async function sha256(t) {
         const m = new TextEncoder().encode(t);
         const h = await crypto.subtle.digest('SHA-256', m);
         return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -59,12 +59,13 @@
 
     async function performAuth(v) {
         if (!v) return false;
-        const hashed = await a(v);
-        // 部分一致を避けるため厳密に比較
+        const hashed = await sha256(v);
         if (hashed === HASHED_PASS) {
             document.getElementById('auth-overlay').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
-            init(); checkAllSites(); return true;
+            init(); 
+            checkAllSites(); 
+            return true;
         }
         return false;
     }
@@ -72,13 +73,18 @@
     async function checkPassword() {
         const val = document.getElementById('passInput').value;
         if (!await performAuth(val)) {
-            alert("パスワードが違います。"); document.getElementById('passInput').value = "";
+            alert("パスワードが違います。"); 
+            document.getElementById('passInput').value = "";
         }
     }
 
+    // URLパラメータ ?p=xxxx を読み取る
     window.addEventListener('load', async () => {
-        const p = new URLSearchParams(window.location.search).get('p');
-        if (p) await performAuth(p);
+        const params = new URLSearchParams(window.location.search);
+        const p = params.get('p');
+        if (p) {
+            await performAuth(p);
+        }
     });
 
     const targetSites = [
@@ -112,29 +118,23 @@
             let isOnline = false;
 
             if (site.url.startsWith('http://10.')) {
-                // Local判定：Fetchではなく、より「生存確認」に近い方法
+                // Local判定：画像による生存確認（混合コンテンツ制限回避）
                 isOnline = await new Promise(resolve => {
                     const img = new Image();
-                    const timeout = setTimeout(() => { resolve(false); img.src = ""; }, 2500);
-                    
-                    // サーバーが動いていれば、たとえ画像がなくても「応答（エラー）」が返る
-                    // サーバーが止まっていれば「タイムアウト」になる
+                    const timeout = setTimeout(() => { resolve(false); img.src = ""; }, 3000);
                     img.onload = () => { clearTimeout(timeout); resolve(true); };
-                    img.onerror = () => { 
-                        clearTimeout(timeout); 
-                        // 反応があった（404等でも接続はできた）場合は、相手が生きている証拠
-                        resolve(true); 
-                    };
+                    img.onerror = () => { clearTimeout(timeout); resolve(true); }; // 404でも反応があれば生きてる
                     img.src = site.url + "favicon.ico?t=" + Date.now();
                 });
             } else {
-                // GitHub判定：ページが存在するか厳密にチェック（CORS許可が必要）
+                // GitHub判定：Fetchでステータスを厳密にチェック
                 try {
                     const controller = new AbortController();
-                    const tid = setTimeout(() => controller.abort(), 4000);
-                    const res = await fetch(site.url, { mode: 'cors', signal: controller.signal });
+                    const tid = setTimeout(() => controller.abort(), 5000);
+                    // mode: 'cors' を使う（相手が404なら catch または res.ok=false になる）
+                    const res = await fetch(site.url, { method: 'HEAD', cache: 'no-store', signal: controller.signal });
                     clearTimeout(tid);
-                    isOnline = res.ok;
+                    isOnline = res.ok; 
                 } catch(e) {
                     isOnline = false;
                 }
