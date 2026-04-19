@@ -36,7 +36,7 @@
 <div id="auth-overlay">
     <div class="auth-box">
         <h2 style="margin-top:0">PASSCODE</h2>
-        <input type="password" id="passInput" class="auth-input" maxlength="4" placeholder="••••" autofocus>
+        <input type="password" id="passInput" class="auth-input" maxlength="256" placeholder="••••" autofocus>
         <button class="btn-check" onclick="checkPassword()">Unlock</button>
     </div>
 </div>
@@ -49,7 +49,7 @@
 
 <script>
     // 指示されたハッシュ
-    const HASHED_PASS = "d4b239ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
+    const HASHED_PASS = "d4b2392ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
 
     async function sha256(t) {
         const m = new TextEncoder().encode(t);
