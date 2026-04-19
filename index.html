@@ -48,7 +48,8 @@
 </div>
 
 <script>
-    const HASHED_PASS = "d4b2392ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
+    // 指定された新しいハッシュ値に更新
+    const HASHED_PASS = "d4b23ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
 
     async function a(t) {
         const m = new TextEncoder().encode(t);
@@ -58,7 +59,9 @@
 
     async function performAuth(v) {
         if (!v) return false;
-        if (await a(v) === HASHED_PASS) {
+        const hashed = await a(v);
+        // 部分一致を避けるため厳密に比較
+        if (hashed === HASHED_PASS) {
             document.getElementById('auth-overlay').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
             init(); checkAllSites(); return true;
@@ -67,7 +70,8 @@
     }
 
     async function checkPassword() {
-        if (!await performAuth(document.getElementById('passInput').value)) {
+        const val = document.getElementById('passInput').value;
+        if (!await performAuth(val)) {
             alert("パスワードが違います。"); document.getElementById('passInput').value = "";
         }
     }
@@ -105,45 +109,40 @@
             const card = document.getElementById(`card-${i}`);
             badge.className = 'status-badge loading';
             
-            // 判定ロジック：画像読み込み（Image）を主軸にする
-            // ページが存在しない(404)か、不通(Offline)かを判別しやすくする
-            const isOnline = await new Promise(resolve => {
-                const img = new Image();
-                const timeout = setTimeout(() => {
-                    img.src = "";
-                    resolve(false);
-                }, 4000);
+            let isOnline = false;
 
-                // 画像として読み込めなくても、サーバーから「何かしらの反応(404含む)」があれば
-                // onerror か onload のどちらかが即座に呼ばれる性質を利用
-                img.onload = () => { clearTimeout(timeout); resolve(true); };
-                img.onerror = () => { 
-                    clearTimeout(timeout);
-                    // エラーが出た場合、それが「セキュリティ拒否」か「不在」かを見極める
-                    // HTTPサイトの場合は、混合コンテンツ制限で止まってもonerrorは走る
-                    resolve(true); 
-                };
-                
-                // 確実に存在しないファイル名を指定することで、
-                // サーバーが動いていれば「即座にエラー(404)」が返り、
-                // サーバーが止まっていれば「タイムアウト」になる
-                img.src = site.url + "check_v1_probe_" + Date.now();
-            });
-
-            // 外部GitHubの場合はfetchで厳密にやる
-            let finalStatus = isOnline;
-            if (site.url.includes('github.dev')) {
+            if (site.url.startsWith('http://10.')) {
+                // Local判定：Fetchではなく、より「生存確認」に近い方法
+                isOnline = await new Promise(resolve => {
+                    const img = new Image();
+                    const timeout = setTimeout(() => { resolve(false); img.src = ""; }, 2500);
+                    
+                    // サーバーが動いていれば、たとえ画像がなくても「応答（エラー）」が返る
+                    // サーバーが止まっていれば「タイムアウト」になる
+                    img.onload = () => { clearTimeout(timeout); resolve(true); };
+                    img.onerror = () => { 
+                        clearTimeout(timeout); 
+                        // 反応があった（404等でも接続はできた）場合は、相手が生きている証拠
+                        resolve(true); 
+                    };
+                    img.src = site.url + "favicon.ico?t=" + Date.now();
+                });
+            } else {
+                // GitHub判定：ページが存在するか厳密にチェック（CORS許可が必要）
                 try {
-                    const res = await fetch(site.url, { mode: 'no-cors' });
-                    finalStatus = true;
+                    const controller = new AbortController();
+                    const tid = setTimeout(() => controller.abort(), 4000);
+                    const res = await fetch(site.url, { mode: 'cors', signal: controller.signal });
+                    clearTimeout(tid);
+                    isOnline = res.ok;
                 } catch(e) {
-                    finalStatus = false;
+                    isOnline = false;
                 }
             }
 
             badge.className = 'status-badge';
-            badge.textContent = finalStatus ? 'Online' : 'Offline';
-            if (finalStatus) { card.classList.add('is-ok'); card.classList.remove('is-error'); }
+            badge.textContent = isOnline ? 'Online' : 'Offline';
+            if (isOnline) { card.classList.add('is-ok'); card.classList.remove('is-error'); }
             else { card.classList.remove('is-ok'); card.classList.add('is-error'); }
         }));
         
