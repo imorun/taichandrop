@@ -15,12 +15,15 @@
         .auth-box { background: var(--card-bg); padding: 40px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1); width: 100%; max-width: 300px; }
         .auth-input { background: #0f172a; border: 2px solid var(--waiting); color: white; padding: 12px; border-radius: 8px; font-size: 1.5rem; text-align: center; margin-bottom: 20px; width: 100%; box-sizing: border-box; outline: none; }
         #main-content { display: none; width: 100%; max-width: 700px; margin-top: 20px; }
-        .btn-check { width: 100%; padding: 14px; background-color: var(--primary); color: #000; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; }
-        .site-grid { display: grid; gap: 16px; margin-top: 20px; }
+        .btn-check { width: 100%; padding: 14px; background-color: var(--primary); color: #000; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; margin-bottom: 20px; }
+        .site-grid { display: grid; gap: 16px; }
         .site-card { display: flex; align-items: center; background-color: var(--card-bg); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 16px 20px; transition: 0.3s; }
         .is-ok { border-left: 4px solid var(--success); cursor: pointer; }
         .is-ok:hover { background: #2d3a4f; transform: scale(1.02); }
         .is-error { border-left: 4px solid var(--error); opacity: 0.7; }
+        .info-area { flex-grow: 1; overflow: hidden; }
+        .site-name { font-weight: 600; display: block; }
+        .site-url { font-size: 0.8rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .status-badge { padding: 6px 14px; border-radius: 10px; font-size: 0.75rem; font-weight: 800; min-width: 80px; text-align: center; background: #334155; color: var(--text-dim); }
         .is-ok .status-badge { background: rgba(34, 197, 94, 0.15); color: var(--success); }
         .is-error .status-badge { background: rgba(239, 68, 68, 0.15); color: var(--error); }
@@ -47,15 +50,15 @@
 <script>
     const HASHED_PASS = "d4b2392ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
 
-    async function a(text) {
-        const msgUint8 = new TextEncoder().encode(text);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-        return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    async function a(t) {
+        const m = new TextEncoder().encode(t);
+        const h = await crypto.subtle.digest('SHA-256', m);
+        return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    async function performAuth(val) {
-        if (!val) return false;
-        if (await a(val) === HASHED_PASS) {
+    async function performAuth(v) {
+        if (!v) return false;
+        if (await a(v) === HASHED_PASS) {
             document.getElementById('auth-overlay').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
             init(); checkAllSites(); return true;
@@ -77,8 +80,7 @@
     const targetSites = [
         { name: "local 1", url: "http://10.104.242.195:5001/" },
         { name: "local 2", url: "http://10.104.242.56:5001/" },
-        { name: "GitHub", url: "https://fantastic-chainsaw-7v5gj75p7677fpq45-5001.app.github.dev/" },
-        { name: "Future", url: "" }
+        { name: "GitHub", url: "https://fantastic-chainsaw-7v5gj75p7677fpq45-5001.app.github.dev/" }
     ];
 
     function init() {
@@ -86,10 +88,10 @@
         list.innerHTML = "";
         targetSites.forEach((site, i) => {
             const card = document.createElement('div');
-            card.className = 'site-card' + (site.url ? '' : ' is-upcoming');
+            card.className = 'site-card';
             card.id = `card-${i}`;
-            if (site.url) card.onclick = () => { if(card.classList.contains('is-ok')) window.location.href = site.url; };
-            card.innerHTML = `<div class="info-area"><span class="site-name">${site.name}</span><span class="site-url">${site.url || 'Coming Soon'}</span></div><div id="status-${i}" class="status-badge">Ready</div>`;
+            card.onclick = () => { if(card.classList.contains('is-ok')) window.location.href = site.url; };
+            card.innerHTML = `<div class="info-area"><span class="site-name">${site.name}</span><span class="site-url">${site.url}</span></div><div id="status-${i}" class="status-badge">Ready</div>`;
             list.appendChild(card);
         });
     }
@@ -99,52 +101,53 @@
         btn.disabled = true; btn.textContent = "Checking...";
         
         await Promise.all(targetSites.map(async (site, i) => {
-            if(!site.url) return;
             const badge = document.getElementById(`status-${i}`);
             const card = document.getElementById(`card-${i}`);
             badge.className = 'status-badge loading';
             
-            try {
-                // 404を検知するために'cors'（デフォルト）でリクエスト。
-                // ただし、GitHub Pages(HTTPS)からLocal(HTTP)を叩くとここで必ずcatchに飛ぶ。
-                const controller = new AbortController();
-                const tid = setTimeout(() => controller.abort(), 3500);
-                
-                const res = await fetch(site.url, { method: 'GET', cache: 'no-store', signal: controller.signal });
-                clearTimeout(tid);
+            // 判定ロジック：画像読み込み（Image）を主軸にする
+            // ページが存在しない(404)か、不通(Offline)かを判別しやすくする
+            const isOnline = await new Promise(resolve => {
+                const img = new Image();
+                const timeout = setTimeout(() => {
+                    img.src = "";
+                    resolve(false);
+                }, 4000);
 
-                if (res.ok) {
-                    updateUI(card, badge, true);
-                } else {
-                    updateUI(card, badge, false); // 404などはここ
-                }
-            } catch (e) {
-                // catchに入った場合：不通か、あるいはHTTPS制限(CORS/Mixed Content)でブロックされたか。
-                // 制限でブロックされた場合、Localが「生きていれば」検証用リソースのロードに反応があるはず。
-                const isLocal = site.url.includes('10.104.');
-                if (isLocal) {
-                    // Localの場合は「通信がブロックされた＝相手のサーバーは存在する」と仮定せず、画像で再送
-                    const imgCheck = await new Promise(res => {
-                        const img = new Image();
-                        img.onload = () => res(true);
-                        img.onerror = () => res(false); // 完全にいない場合は即onerror
-                        img.src = site.url + "favicon.ico?t=" + Date.now();
-                        setTimeout(() => res(false), 2500);
-                    });
-                    updateUI(card, badge, imgCheck);
-                } else {
-                    updateUI(card, badge, false);
+                // 画像として読み込めなくても、サーバーから「何かしらの反応(404含む)」があれば
+                // onerror か onload のどちらかが即座に呼ばれる性質を利用
+                img.onload = () => { clearTimeout(timeout); resolve(true); };
+                img.onerror = () => { 
+                    clearTimeout(timeout);
+                    // エラーが出た場合、それが「セキュリティ拒否」か「不在」かを見極める
+                    // HTTPサイトの場合は、混合コンテンツ制限で止まってもonerrorは走る
+                    resolve(true); 
+                };
+                
+                // 確実に存在しないファイル名を指定することで、
+                // サーバーが動いていれば「即座にエラー(404)」が返り、
+                // サーバーが止まっていれば「タイムアウト」になる
+                img.src = site.url + "check_v1_probe_" + Date.now();
+            });
+
+            // 外部GitHubの場合はfetchで厳密にやる
+            let finalStatus = isOnline;
+            if (site.url.includes('github.dev')) {
+                try {
+                    const res = await fetch(site.url, { mode: 'no-cors' });
+                    finalStatus = true;
+                } catch(e) {
+                    finalStatus = false;
                 }
             }
-        }));
-        btn.disabled = false; btn.textContent = "Refresh All Systems";
-    }
 
-    function updateUI(card, badge, isOk) {
-        badge.className = 'status-badge';
-        badge.textContent = isOk ? 'Online' : 'Offline';
-        if (isOk) { card.classList.add('is-ok'); card.classList.remove('is-error'); }
-        else { card.classList.remove('is-ok'); card.classList.add('is-error'); }
+            badge.className = 'status-badge';
+            badge.textContent = finalStatus ? 'Online' : 'Offline';
+            if (finalStatus) { card.classList.add('is-ok'); card.classList.remove('is-error'); }
+            else { card.classList.remove('is-ok'); card.classList.add('is-error'); }
+        }));
+        
+        btn.disabled = false; btn.textContent = "Refresh All Systems";
     }
 </script>
 </body>
