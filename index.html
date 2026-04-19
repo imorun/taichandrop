@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connectivity Dashboard</title>
+    <title>Taichandrop Connectivity Dashboard</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -102,7 +102,7 @@
 <div id="auth-overlay">
     <div class="auth-box">
         <h2 style="margin-top:0">PASSCODE</h2>
-        <input type="password" id="passInput" class="auth-input" placeholder="••••" autofocus>
+        <input type="password" id="passInput" class="auth-input" maxlength="4" placeholder="••••" autofocus>
         <button class="btn-check" onclick="checkPassword()">Unlock</button>
     </div>
 </div>
@@ -114,7 +114,6 @@
 </div>
 
 <script>
-    // 「0703」の正しいSHA-256ハッシュ値に修正しました
     const HASHED_PASS = "d4b2392ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
 
     async function a(text) {
@@ -149,9 +148,7 @@
     window.addEventListener('load', async () => {
         const urlParams = new URLSearchParams(window.location.search);
         const passParam = urlParams.get('p');
-        if (passParam) {
-            await performAuth(passParam);
-        }
+        if (passParam) await performAuth(passParam);
     });
 
     document.getElementById('passInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') checkPassword(); });
@@ -175,13 +172,7 @@
             } else {
                 card.classList.add('is-upcoming');
             }
-            card.innerHTML = `
-                <div class="info-area">
-                    <span class="site-name">${site.name}</span>
-                    <span class="site-url">${site.url || 'Future Integration'}</span>
-                </div>
-                <div id="status-${index}" class="status-badge">${site.url ? 'Ready' : 'Coming'}</div>
-            `;
+            card.innerHTML = `<div class="info-area"><span class="site-name">${site.name}</span><span class="site-url">${site.url || 'Future Integration'}</span></div><div id="status-${index}" class="status-badge">${site.url ? 'Ready' : 'Coming'}</div>`;
             list.appendChild(card);
         });
     }
@@ -197,23 +188,35 @@
             const card = document.getElementById(`card-${index}`);
             badge.className = 'status-badge loading';
             badge.textContent = '...';
-            card.classList.remove('is-ok', 'is-error');
+
+            const isLocal = site.url.includes('10.104.');
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
 
             try {
-                const controller = new AbortController();
-                const id = setTimeout(() => controller.abort(), 4000);
-                const res = await fetch(site.url, { method: 'GET', cache: 'no-store', signal: controller.signal });
-                clearTimeout(id);
-                
-                if (res.ok) {
+                if (isLocal) {
+                    // Local IPはno-corsで「サーバーが生きているか」のみ判定（CORS回避）
+                    await fetch(site.url, { mode: 'no-cors', signal: controller.signal, cache: 'no-store' });
                     badge.className = 'status-badge'; badge.textContent = 'Online';
                     card.classList.add('is-ok');
+                    card.classList.remove('is-error');
                 } else {
-                    throw new Error("Not Found");
+                    // GitHub等はcors（デフォルト）で「ページが存在するか」まで厳密に判定
+                    const res = await fetch(site.url, { signal: controller.signal, cache: 'no-store' });
+                    if (res.ok) {
+                        badge.className = 'status-badge'; badge.textContent = 'Online';
+                        card.classList.add('is-ok');
+                        card.classList.remove('is-error');
+                    } else {
+                        throw new Error();
+                    }
                 }
             } catch (e) {
                 badge.className = 'status-badge'; badge.textContent = 'Offline';
                 card.classList.add('is-error');
+                card.classList.remove('is-ok');
+            } finally {
+                clearTimeout(timeoutId);
             }
         }));
         btn.disabled = false;
