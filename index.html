@@ -36,7 +36,7 @@
 <div id="auth-overlay">
     <div class="auth-box">
         <h2 style="margin-top:0">PASSCODE</h2>
-        <input type="password" id="passInput" class="auth-input" maxlength="4" placeholder="••••" autofocus>
+        <input type="password" id="passInput" class="auth-input" maxlength="256" placeholder="••••" autofocus>
         <button class="btn-check" onclick="checkPassword()">Unlock</button>
     </div>
 </div>
@@ -48,7 +48,7 @@
 </div>
 
 <script>
-    // 指定されたハッシュ値
+    // 指示されたハッシュ
     const HASHED_PASS = "d4b239ca2344cd6e7f786113f8abbe11411e5609bb662d4827d30b52ab8cad0";
 
     async function sha256(t) {
@@ -57,14 +57,16 @@
         return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    // 認証処理：入力された値そのものか、そのハッシュが一致するかを確認
     async function performAuth(v) {
         if (!v) return false;
-        const hashed = await sha256(v);
-        if (hashed === HASHED_PASS) {
+        const hashedInput = await sha256(v);
+        // 入力値そのものがハッシュと一致するか（?p=にハッシュを入れる運用に対応）
+        if (v === HASHED_PASS || hashedInput === HASHED_PASS) {
             document.getElementById('auth-overlay').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
             init(); 
-            checkAllSites(); 
+            setTimeout(checkAllSites, 100); 
             return true;
         }
         return false;
@@ -78,11 +80,11 @@
         }
     }
 
-    // URLパラメータ ?p=xxxx を読み取る
     window.addEventListener('load', async () => {
         const params = new URLSearchParams(window.location.search);
         const p = params.get('p');
         if (p) {
+            console.log("Param found, authenticating...");
             await performAuth(p);
         }
     });
@@ -118,25 +120,29 @@
             let isOnline = false;
 
             if (site.url.startsWith('http://10.')) {
-                // Local判定：画像による生存確認（混合コンテンツ制限回避）
                 isOnline = await new Promise(resolve => {
                     const img = new Image();
                     const timeout = setTimeout(() => { resolve(false); img.src = ""; }, 3000);
                     img.onload = () => { clearTimeout(timeout); resolve(true); };
-                    img.onerror = () => { clearTimeout(timeout); resolve(true); }; // 404でも反応があれば生きてる
+                    img.onerror = () => { clearTimeout(timeout); resolve(true); }; 
                     img.src = site.url + "favicon.ico?t=" + Date.now();
                 });
             } else {
-                // GitHub判定：Fetchでステータスを厳密にチェック
                 try {
                     const controller = new AbortController();
-                    const tid = setTimeout(() => controller.abort(), 5000);
-                    // mode: 'cors' を使う（相手が404なら catch または res.ok=false になる）
-                    const res = await fetch(site.url, { method: 'HEAD', cache: 'no-store', signal: controller.signal });
+                    const tid = setTimeout(() => controller.abort(), 6000);
+                    // 404を検知するためにはmode: 'no-cors'は使わず、デフォルトのCORSモードでHEADリクエストを送る
+                    const res = await fetch(site.url, { 
+                        method: 'GET', // GitHub DevはHEADを拒否することがあるためGET
+                        mode: 'cors', 
+                        cache: 'no-store', 
+                        signal: controller.signal 
+                    });
                     clearTimeout(tid);
-                    isOnline = res.ok; 
+                    isOnline = res.ok; // 200~299以外（404含む）ならfalse
                 } catch(e) {
-                    isOnline = false;
+                    // CORSブロックされた場合でも「通信はできた（相手はいる）」ならOnlineとする
+                    isOnline = (e.name !== 'AbortError' && !e.message.includes('Failed to fetch'));
                 }
             }
 
